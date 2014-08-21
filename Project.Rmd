@@ -1,0 +1,111 @@
+Predicting the manner of exercises are made with Machine Learning
+===================================================================
+    
+# Introduction
+At this document, You will find some way to predict the manner of 6 people do their exercise.
+Using data from accelerometers on the belt, forearm, arm,  dumbell and registers of barbell lifts made in 5 different ways, both correctly and incorrecty.
+
+## Loading and preprocessing the data
+At this point, It will be selected only the variables without any summarization, this way we will reduce the out of the sample error.
+    
+```{r importingsubsett, cache=TRUE}
+set.seed(1234)
+setwd("C://Users//a42664//Desktop//Coursera//WD_R//MachineLearning")
+train<-read.csv("pml-training.csv",header=TRUE)
+test<-read.csv("pml-testing.csv",header=TRUE)
+allvars<-c(grep("accel", names(train),value=TRUE),grep("gyros", names(train),value=TRUE),grep("magnet", names(train),value=TRUE))
+number<-c(grep("var", allvars),grep("total", allvars))
+wanted<-allvars[-number]
+finaltrain<-train[,c("classe",wanted)]
+finaltest<-test[,c("problem_id",wanted)]
+```
+
+## Partiotioning the finaltrain set
+
+Lets separate 20% of the rows to validate our model.
+```{r partitioning, cache=TRUE}
+library(caret)
+set.seed(1234)
+indextrain <- createDataPartition(finaltrain$classe, p = 0.8, list = FALSE)
+finalTraining <- finaltrain[indextrain, ]
+finalValidation <- finaltrain[-indextrain, ]
+```
+
+## Exploring the data
+
+Lets see if there is any one of the variables that can be excluded from the analysis. Looking to the correlation between them, We can exclude one of the couple that is correlated.
+```{r exploring, cache=TRUE}
+COR <- cor(finalTraining[2:37])
+table(abs(COR) > 0.8 & COR != 1)
+```
+
+As We saw, there is 18 values above 0,8 absolute. So, there is 9 variables that can be excluded at least.
+```{r matrixcor, cache=TRUE}
+greaterCors<-COR[abs(COR) > 0.8 & COR != 1]
+index <- which(duplicated(greaterCors))
+uniquegreaterCors<-greaterCors[-index]
+correlated<-matrix(, nrow = 9, ncol = 3)
+for (i in 1:9){
+    for (j in 1:2){
+        correlated[i,j]<-rownames(COR)[which(COR==uniquegreaterCors[i], arr.ind=TRUE)[j]]
+        correlated[i,3]<-uniquegreaterCors[i]
+    }
+}
+correlated
+```
+
+So, We will exclude 7 variables high correlated with each other.
+```{r excluding, cache=TRUE}
+exclude<-correlated[-which(duplicated(correlated[,1])),1]
+
+finaltrainclean<-finalTraining[,!(names(finalTraining) %in% exclude)]
+finalvaliclean<-finalValidation[,!(names(finalValidation) %in% exclude)]
+finaltestclean<-finaltest[,!(names(finaltest) %in% exclude)]
+```
+
+
+## Building the Model
+Lets start to build our model.
+I'm gonna try the prediction with random forest:
+```{r trainingpred, cache=TRUE}
+library(randomForest)
+rfModel <- randomForest(classe ~ ., data = finaltrainclean, importance = TRUE, ntrees = 10)
+predito <- predict(rfModel, finaltrainclean)
+print(confusionMatrix(predito, finaltrainclean$classe))
+```
+There is a great value of accuracy, but we can not take this too serious, lets take a look at the validation accuracy.
+
+
+## Validation Accuracy
+
+Now, its time to predict at the validation:
+```{r validation, cache=TRUE}
+predvalid <- predict(rfModel, finalvaliclean)
+print(confusionMatrix(predvalid, finalvaliclean$classe))
+```
+The accuracy at the cross validation is about 98% and the out-of-sample error is therefor 0.7%, so this model is quite good.
+
+## Prediction on the test set
+
+The predictions is followin at the test set:
+```{r predtests, cache=TRUE}
+testpreds <- predict(rfModel, finaltestclean)
+testpreds
+```
+
+Using the instructions and then post it to the submission page we have:
+```{r submission, cache=TRUE}
+answers <- as.vector(testpreds)
+
+pml_write_files = function(x) {
+    n = length(x)
+    for (i in 1:n) {
+        filename = paste0("problem_id_", i, ".txt")
+        write.table(x[i], file = filename, quote = FALSE, row.names = FALSE, 
+            col.names = FALSE)
+    }
+}
+pml_write_files(answers)
+```
+
+
